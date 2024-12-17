@@ -1,0 +1,13 @@
+.env
+.cache
+spotify_profiler.egg-info
+data
+venv
+analysis.log
+music_profiler_debug.log
+__pycache__
+processor_state.pkl
+analysis_results
+logs
+.spotify_cache
+data_2

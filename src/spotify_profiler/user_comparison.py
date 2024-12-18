@@ -1,204 +1,248 @@
 from typing import Dict, Any, List, Tuple
+import pandas as pd
 import numpy as np
 from collections import defaultdict
 from scipy.spatial.distance import cosine
-from scipy.stats import percentileofscore
+from scipy.stats import pearsonr
 import json
 from pathlib import Path
 import logging
+from .comparison_insights import ComparisonInsightsAnalyzer
 
 class UserComparisonAnalyzer:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        
-        # Define baseline statistics for realistic probability calculation
-        self.baseline_stats = {
-            'genre_overlap_distribution': [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
-            'artist_overlap_distribution': [2, 5, 8, 12, 15, 20, 25, 30, 35, 40],
-            'max_realistic_score': 85.0
-        }
-        
-        # Weights for different comparison aspects
-        self.weight_factors = {
-            'genre_overlap': 0.35,
-            'artist_overlap': 0.25,
-            'era_preference': 0.20,
-            'listening_patterns': 0.20
-        }
+        self.insights_analyzer = ComparisonInsightsAnalyzer()  # Add this line
 
-    def compare_users(self, user1_results: Dict, user2_results: Dict) -> Dict[str, Any]:
-        """Compare two users' listening histories and calculate similarity metrics"""
+    def compare_users(self, results1_path: str, results2_path: str, 
+                     user1_name: str = "User 1", 
+                     user2_name: str = "User 2") -> Dict[str, Any]:
+        """Compare two users' listening histories from analysis result files"""
         try:
-            # Calculate detailed comparison metrics
-            detailed_comparison = {
-                'listening_habits': self._compare_listening_habits(
-                    user1_results['user_metrics'],
-                    user2_results['user_metrics']
-                ),
-                'music_taste': self._compare_music_taste(user1_results, user2_results),
-                'temporal_patterns': self._compare_temporal_patterns(
-                    user1_results['temporal_patterns'],
-                    user2_results['temporal_patterns']
-                ),
-                'shared_music': self._analyze_shared_music(user1_results, user2_results)
-            }
-
-            # Calculate realistic match probability
-            match_probability = self._calculate_realistic_probability(user1_results, user2_results)
+            # Load analysis results
+            with open(results1_path, 'r', encoding='utf-8') as f:
+                results1 = json.load(f)
+            with open(results2_path, 'r', encoding='utf-8') as f:
+                results2 = json.load(f)
             
-            return {
-                'match_probability': match_probability,
-                'detailed_comparison': detailed_comparison
+            # Calculate various similarity metrics
+            comparison_results = {
+                'basic_comparison': self._compare_basic_stats(results1, results2),
+                'artist_similarity': self._compare_artists(results1, results2),
+                'temporal_similarity': self._compare_temporal_patterns(results1, results2),
+                'genre_similarity': self._compare_genres(results1, results2),
+                'listening_habits': self._compare_listening_habits(results1, results2),
+                'overall_similarity': self._calculate_overall_similarity(results1, results2)
             }
+            
+            # Add insights analysis
+            comparison_results['insights'] = self.insights_analyzer.analyze_comparison(
+                comparison_results,
+                user1_name,
+                user2_name
+            )
+            
+            return comparison_results
             
         except Exception as e:
             self.logger.error(f"Error comparing users: {e}")
             raise
 
-    def _calculate_realistic_probability(self, user1_results: Dict, user2_results: Dict) -> float:
-        """Calculate realistic probability of finding this level of music taste similarity"""
-        try:
-            # Calculate raw similarities
-            genre_sim = self._calculate_genre_similarity(
-                user1_results['genres'],
-                user2_results['genres']
-            )
-            
-            artist_sim = self._calculate_artist_similarity(
-                user1_results['artists'],
-                user2_results['artists']
-            )
-            
-            era_sim = self._calculate_era_similarity(
-                user1_results['tracks'],
-                user2_results['tracks']
-            )
-            
-            pattern_sim = self._calculate_temporal_similarity(
-                user1_results['temporal_patterns'],
-                user2_results['temporal_patterns']
-            )
-            
-            # Calculate percentile ranks
-            genre_percentile = percentileofscore(self.baseline_stats['genre_overlap_distribution'], genre_sim)
-            artist_percentile = percentileofscore(self.baseline_stats['artist_overlap_distribution'], artist_sim)
-            
-            # Combine scores with weights
-            weighted_score = (
-                genre_percentile * self.weight_factors['genre_overlap'] +
-                artist_percentile * self.weight_factors['artist_overlap'] +
-                era_sim * self.weight_factors['era_preference'] +
-                pattern_sim * self.weight_factors['listening_patterns']
-            )
-            
-            # Normalize to realistic maximum
-            final_score = min(weighted_score, self.baseline_stats['max_realistic_score'])
-            
-            # Convert to probability
-            probability = self._convert_to_probability(final_score)
-            
-            return round(probability, 2)
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating probability: {e}")
-            return 0.0
+    def _compare_basic_stats(self, results1: Dict, results2: Dict) -> Dict[str, Any]:
+        """Compare basic listening statistics from analysis results"""
+        stats1 = results1['user_metrics']['listening_stats']
+        stats2 = results2['user_metrics']['listening_stats']
 
-    def _convert_to_probability(self, similarity_score: float) -> float:
-        """Convert similarity score to probability of finding such a match"""
-        if similarity_score >= self.baseline_stats['max_realistic_score']:
-            return 0.1  # 0.1% chance of finding nearly identical taste
+        def calculate_percentile(value1: float, value2: float) -> float:
+            return (min(value1, value2) / max(value1, value2)) * 100 if max(value1, value2) > 0 else 0
+
+        return {
+            'listening_time_similarity': calculate_percentile(
+                stats1['total_time_hours'],
+                stats2['total_time_hours']
+            ),
+            'artist_variety_similarity': calculate_percentile(
+                stats1['unique_artists'],
+                stats2['unique_artists']
+            ),
+            'track_variety_similarity': calculate_percentile(
+                stats1['unique_tracks'],
+                stats2['unique_tracks']
+            ),
+            'comparisons': {
+                'total_time_hours': {
+                    'user1': stats1['total_time_hours'],
+                    'user2': stats2['total_time_hours']
+                },
+                'unique_artists': {
+                    'user1': stats1['unique_artists'],
+                    'user2': stats2['unique_artists']
+                },
+                'unique_tracks': {
+                    'user1': stats1['unique_tracks'],
+                    'user2': stats2['unique_tracks']
+                }
+            }
+        }
+
+    def _compare_artists(self, results1: Dict, results2: Dict) -> Dict[str, Any]:
+        """Compare artist preferences between users"""
+        artists1 = results1['artists']['top_artists']
+        artists2 = results2['artists']['top_artists']
+
+        # Find common artists
+        common_artists = set(artists1.keys()) & set(artists2.keys())
         
-        # Exponential decay function for realistic distribution
-        probability = 100 * np.exp(-0.05 * similarity_score)
+        # Calculate correlation for common artists
+        if common_artists:
+            artist_plays1 = [artists1[artist] for artist in common_artists]
+            artist_plays2 = [artists2[artist] for artist in common_artists]
+            correlation = pearsonr(artist_plays1, artist_plays2)[0]
+        else:
+            correlation = 0
+
+        # Get artist profiles for detailed comparison
+        profiles1 = results1['artists']['artist_profiles']
+        profiles2 = results2['artists']['artist_profiles']
+
+        return {
+            'common_artists_count': len(common_artists),
+            'common_artists_percentage': len(common_artists) / max(len(artists1), len(artists2)) * 100,
+            'artist_preference_correlation': correlation if not np.isnan(correlation) else 0,
+            'top_shared_artists': self._get_top_shared_artists(profiles1, profiles2, common_artists),
+            'unique_preferences': {
+                'user1_unique': list(set(artists1.keys()) - common_artists),
+                'user2_unique': list(set(artists2.keys()) - common_artists)
+            }
+        }
+
+    def _compare_temporal_patterns(self, results1: Dict, results2: Dict) -> Dict[str, float]:
+        """Compare temporal listening patterns"""
+        dist1 = results1['temporal_patterns']['distributions']
+        dist2 = results2['temporal_patterns']['distributions']
         
-        return min(100, max(0, probability))
-
-    # [Previous methods remain the same: _compare_listening_habits, _compare_music_taste, etc.]
-    
-    def _calculate_genre_similarity(self, genres1: Dict, genres2: Dict) -> float:
-        """Calculate genre similarity percentage"""
-        try:
-            genres1_set = set(genres1['top_genres'].keys())
-            genres2_set = set(genres2['top_genres'].keys())
+        similarities = {}
+        for timeframe in ['hourly', 'daily']:
+            # Create vectors for comparison
+            all_periods = set(str(k) for k in dist1[timeframe].keys()) | set(str(k) for k in dist2[timeframe].keys())
+            vector1 = [dist1[timeframe].get(str(period), 0) for period in all_periods]
+            vector2 = [dist2[timeframe].get(str(period), 0) for period in all_periods]
             
-            if not genres1_set or not genres2_set:
-                return 0.0
-            
-            intersection = len(genres1_set & genres2_set)
-            union = len(genres1_set | genres2_set)
-            
-            return (intersection / union) * 100
-            
-        except (KeyError, AttributeError):
-            return 0.0
-
-    def _calculate_artist_similarity(self, artists1: Dict, artists2: Dict) -> float:
-        """Calculate artist similarity percentage"""
-        try:
-            artists1_set = set(artists1['top_artists'].keys())
-            artists2_set = set(artists2['top_artists'].keys())
-            
-            if not artists1_set or not artists2_set:
-                return 0.0
-            
-            intersection = len(artists1_set & artists2_set)
-            union = len(artists1_set | artists2_set)
-            
-            return (intersection / union) * 100
-            
-        except (KeyError, AttributeError):
-            return 0.0
-
-    def _calculate_era_similarity(self, tracks1: Dict, tracks2: Dict) -> float:
-        """Calculate similarity in era preferences (0-100)"""
-        try:
-            # Extract release years
-            years1 = [t['metadata'].get('release_year', 0) for t in tracks1.values()]
-            years2 = [t['metadata'].get('release_year', 0) for t in tracks2.values()]
-            
-            years1 = [y for y in years1 if y > 0]
-            years2 = [y for y in years2 if y > 0]
-            
-            if not years1 or not years2:
-                return 0.0
-            
-            # Calculate median years
-            median1 = np.median(years1)
-            median2 = np.median(years2)
-            
-            # Calculate similarity based on decade difference
-            decade_diff = abs(median1 - median2) / 10
-            return max(0, 100 - (decade_diff * 20))
-            
-        except (KeyError, AttributeError):
-            return 0.0
-
-    def _calculate_temporal_similarity(self, temporal1: Dict, temporal2: Dict) -> float:
-        """Calculate similarity in listening patterns (0-100)"""
-        try:
-            dist1 = temporal1['distributions']['hourly']
-            dist2 = temporal2['distributions']['hourly']
-            
-            if not dist1 or not dist2:
-                return 0.0
-            
-            # Normalize distributions
-            norm1 = self._normalize_distribution(dist1)
-            norm2 = self._normalize_distribution(dist2)
+            # Normalize vectors
+            sum1, sum2 = sum(vector1), sum(vector2)
+            vector1_norm = np.array(vector1) / sum1 if sum1 > 0 else np.zeros_like(vector1)
+            vector2_norm = np.array(vector2) / sum2 if sum2 > 0 else np.zeros_like(vector2)
             
             # Calculate cosine similarity
-            similarity = 1 - cosine(
-                list(norm1.values()),
-                list(norm2.values())
-            )
-            
-            return similarity * 100
-            
-        except (KeyError, AttributeError):
-            return 0.0
+            if sum1 > 0 and sum2 > 0:
+                similarity = 1 - cosine(vector1_norm, vector2_norm)
+                similarities[f'{timeframe}_similarity'] = similarity if not np.isnan(similarity) else 0
+            else:
+                similarities[f'{timeframe}_similarity'] = 0
+        
+        return similarities
 
-    @staticmethod
-    def _normalize_distribution(dist: Dict[str, float]) -> Dict[str, float]:
-        """Normalize a distribution to sum to 1"""
-        total = sum(dist.values())
-        return {k: v/total for k, v in dist.items()} if total > 0 else dist
+    def _compare_genres(self, results1: Dict, results2: Dict) -> Dict[str, Any]:
+        """Compare genre preferences between users"""
+        genres1 = results1['genres']['top_genres']
+        genres2 = results2['genres']['top_genres']
+        
+        common_genres = set(genres1.keys()) & set(genres2.keys())
+        
+        # Calculate genre similarity using cosine similarity
+        all_genres = list(set(genres1.keys()) | set(genres2.keys()))
+        vector1 = [genres1.get(genre, 0) for genre in all_genres]
+        vector2 = [genres2.get(genre, 0) for genre in all_genres]
+        
+        # Normalize vectors
+        sum1, sum2 = sum(vector1), sum(vector2)
+        vector1_norm = np.array(vector1) / sum1 if sum1 > 0 else np.zeros_like(vector1)
+        vector2_norm = np.array(vector2) / sum2 if sum2 > 0 else np.zeros_like(vector2)
+        
+        similarity = 1 - cosine(vector1_norm, vector2_norm) if sum1 > 0 and sum2 > 0 else 0
+        
+        return {
+            'genre_similarity_score': similarity if not np.isnan(similarity) else 0,
+            'common_genres_count': len(common_genres),
+            'top_shared_genres': sorted(
+                [(genre, genres1.get(genre, 0), genres2.get(genre, 0)) for genre in common_genres],
+                key=lambda x: x[1] + x[2],
+                reverse=True
+            )[:10],
+            'unique_preferences': {
+                'user1_unique': list(set(genres1.keys()) - common_genres),
+                'user2_unique': list(set(genres2.keys()) - common_genres)
+            }
+        }
+
+    def _compare_listening_habits(self, results1: Dict, results2: Dict) -> Dict[str, Any]:
+        """Compare listening behaviors and habits"""
+        metrics1 = results1['user_metrics']['engagement_metrics']
+        metrics2 = results2['user_metrics']['engagement_metrics']
+        
+        sessions1 = results1['temporal_patterns']['listening_sessions']
+        sessions2 = results2['temporal_patterns']['listening_sessions']
+
+        def calculate_similarity(value1: float, value2: float) -> float:
+            return (min(value1, value2) / max(value1, value2)) * 100 if max(value1, value2) > 0 else 100
+
+        return {
+            'engagement_similarity': {
+                'skip_rate': calculate_similarity(
+                    metrics1['skip_rate'],
+                    metrics2['skip_rate']
+                ),
+                'shuffle_rate': calculate_similarity(
+                    metrics1['shuffle_rate'],
+                    metrics2['shuffle_rate']
+                )
+            },
+            'session_patterns': {
+                'avg_session_similarity': calculate_similarity(
+                    sessions1['average_session_minutes'],
+                    sessions2['average_session_minutes']
+                ),
+                'tracks_per_session_similarity': calculate_similarity(
+                    sessions1['average_tracks_per_session'],
+                    sessions2['average_tracks_per_session']
+                )
+            }
+        }
+
+    def _calculate_overall_similarity(self, results1: Dict, results2: Dict) -> float:
+        """Calculate overall similarity score between users"""
+        genre_sim = self._compare_genres(results1, results2)['genre_similarity_score']
+        artist_sim = self._compare_artists(results1, results2)['artist_preference_correlation']
+        temporal_sim = np.mean(list(self._compare_temporal_patterns(results1, results2).values()))
+        
+        # Weighted combination
+        weights = {
+            'genre': 0.35,
+            'artist': 0.35,
+            'temporal': 0.30
+        }
+        
+        overall_score = (
+            genre_sim * weights['genre'] +
+            artist_sim * weights['artist'] +
+            temporal_sim * weights['temporal']
+        )
+        
+        return max(0, min(100, overall_score * 100))
+
+    def _get_top_shared_artists(self, profiles1: Dict, profiles2: Dict, common_artists: set) -> List[Dict[str, Any]]:
+        """Get detailed comparison of shared artists"""
+        shared_artists = []
+        
+        for artist in common_artists:
+            if artist in profiles1 and artist in profiles2:
+                shared_artists.append({
+                    'artist': artist,
+                    'user1_plays': profiles1[artist]['play_count'],
+                    'user2_plays': profiles2[artist]['play_count'],
+                    'user1_time': profiles1[artist]['total_time_minutes'],
+                    'user2_time': profiles2[artist]['total_time_minutes'],
+                    'genres': list(set(profiles1[artist]['genres']) & set(profiles2[artist]['genres']))
+                })
+        
+        return sorted(shared_artists, key=lambda x: x['user1_plays'] + x['user2_plays'], reverse=True)[:10]

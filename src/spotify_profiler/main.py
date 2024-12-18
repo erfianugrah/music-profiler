@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict, Counter
 from .api_client import MusicAPIClient
 from .batch_processor import BatchProcessor
+from .analysis_insights import AnalysisInsights
 from .logging_config import setup_logging
 
 class EnhancedMusicAnalyzer:
@@ -14,6 +15,7 @@ class EnhancedMusicAnalyzer:
         self.logger = logging.getLogger(__name__)
         self.api_client = MusicAPIClient()
         self.batch_processor = BatchProcessor(self.api_client)
+        self.insights_analyzer = AnalysisInsights()  # Add this line
 
     def analyze_history(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze listening history with metrics optimized for user comparison"""
@@ -53,7 +55,7 @@ class EnhancedMusicAnalyzer:
                 'artists': self._analyze_artists(enriched_df),
                 'temporal_patterns': self._analyze_temporal_patterns(enriched_df)
             }
-            
+            results['insights'] = self.insights_analyzer.generate_insights(results)
             self.logger.info("Analysis completed successfully")
             return results
             

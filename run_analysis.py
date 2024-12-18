@@ -50,20 +50,9 @@ def print_menu():
     print("2. Resume previous analysis")
     print("3. Reset and start over")
     print("4. Compare two analysis results")
-    print("5. Exit")
+    print("5. Launch visualization dashboard")
+    print("6. Exit")
     print("\nPress Ctrl+C at any time to pause the analysis")
-
-def list_analysis_files(directory: str = "analysis_results") -> List[Path]:
-    """List all analysis result files in the specified directory"""
-    directory = Path(directory)
-    if not directory.exists():
-        return []
-    
-    # Get all JSON files that start with "analysis_results"
-    files = sorted(directory.glob("analysis_results_*.json"), 
-                  key=lambda x: x.stat().st_mtime, 
-                  reverse=True)  # Sort by modification time, newest first
-    return files
 
 def select_analysis_file(prompt: str) -> Optional[Path]:
     """Display a menu of available analysis files and get user selection"""
@@ -98,6 +87,92 @@ def select_analysis_file(prompt: str) -> Optional[Path]:
                 print(f"Please enter a number between 1 and {len(files)}")
         except ValueError:
             print("Please enter a valid number or 'q' to quit")
+
+def select_file_for_visualization() -> Optional[Path]:
+    """Display a menu of available files for visualization"""
+    analysis_files = list(Path('analysis_results').glob('analysis_results_*.json'))
+    comparison_files = list(Path('comparison_results').glob('comparison_*.json'))
+    
+    if not analysis_files and not comparison_files:
+        print("\nNo analysis or comparison files found.")
+        return None
+        
+    print("\nAvailable files for visualization:")
+    print("\nAnalysis Results:")
+    for i, file in enumerate(analysis_files, 1):
+        # Get file creation time
+        timestamp = datetime.fromtimestamp(file.stat().st_mtime)
+        # Get file size in MB
+        size = file.stat().st_size / (1024 * 1024)
+        print(f"{i}. {file.name}")
+        print(f"   Created: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Size: {size:.2f} MB")
+    
+    print("\nComparison Results:")
+    offset = len(analysis_files)
+    for i, file in enumerate(comparison_files, offset + 1):
+        timestamp = datetime.fromtimestamp(file.stat().st_mtime)
+        size = file.stat().st_size / (1024 * 1024)
+        print(f"{i}. {file.name}")
+        print(f"   Created: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   Size: {size:.2f} MB")
+    
+    while True:
+        try:
+            choice = input("\nEnter number to select file (or 'q' to quit): ").strip().lower()
+            
+            if choice == 'q':
+                return None
+                
+            choice_idx = int(choice)
+            all_files = analysis_files + comparison_files
+            
+            if 1 <= choice_idx <= len(all_files):
+                return all_files[choice_idx - 1]
+            else:
+                print(f"Please enter a number between 1 and {len(all_files)}")
+        except ValueError:
+            print("Please enter a valid number or 'q' to quit")
+
+def list_analysis_files(directory: str = "analysis_results") -> List[Path]:
+    """List all analysis result files in the specified directory"""
+    directory = Path(directory)
+    if not directory.exists():
+        return []
+    
+    # Get all JSON files that start with "analysis_results"
+    files = sorted(directory.glob("analysis_results_*.json"), 
+                  key=lambda x: x.stat().st_mtime, 
+                  reverse=True)  # Sort by modification time, newest first
+    return files
+
+def launch_dashboard_menu():
+    """Handle the dashboard launch process with file selection"""
+
+    logger = logging.getLogger(__name__)
+    # First show the file selection menu
+    selected_file = select_file_for_visualization()
+    if not selected_file:
+        print("\nNo file selected. Returning to main menu...")
+        return
+
+    # Then launch the dashboard with the selected file
+    try:
+        from spotify_profiler.dashboard import SpotifyDashboard
+        print(f"\nLaunching dashboard with file: {selected_file.name}")
+        dashboard = SpotifyDashboard()
+        
+        print("\nDashboard is running at http://localhost:8050")
+        print("Press Ctrl+C to stop the dashboard")
+        print("\nNote: The terminal will be occupied while the dashboard is running.")
+        print("Close the browser window and press Ctrl+C to return to the main menu.")
+        
+        dashboard.run_server(debug=True)
+    except KeyboardInterrupt:
+        print("\nDashboard stopped. Returning to main menu...")
+    except Exception as e:
+        print(f"\nError launching dashboard: {str(e)}")
+        logger.error(f"Dashboard launch failed: {e}", exc_info=True)
 
 def compare_analyses():
     """Compare two analysis results with named users"""
@@ -153,60 +228,6 @@ def compare_analyses():
         print(f"- {user1_name}: {tracks['user1']} unique tracks")
         print(f"- {user2_name}: {tracks['user2']} unique tracks")
         
-        # Artist similarity
-        artist = comparison_results['artist_similarity']
-        print("\nArtist Preferences:")
-        print(f"Common artists: {artist['common_artists_count']}")
-        print(f"Artist preference correlation: {artist['artist_preference_correlation']:.2f}")
-        
-        if artist.get('unique_preferences', {}).get('user1_unique'):
-            print(f"\n{user1_name}'s unique artists:")
-            for a in artist['unique_preferences']['user1_unique']:
-                print(f"- {a}")
-                
-        if artist.get('unique_preferences', {}).get('user2_unique'):
-            print(f"\n{user2_name}'s unique artists:")
-            for a in artist['unique_preferences']['user2_unique']:
-                print(f"- {a}")
-        
-        # Genre similarity
-        genre = comparison_results['genre_similarity']
-        print("\nGenre Analysis:")
-        print(f"Genre similarity score: {genre['genre_similarity_score']:.2f}")
-        print(f"Common genres: {genre['common_genres_count']}")
-        
-        if genre.get('unique_preferences', {}).get('user1_unique'):
-            print(f"\n{user1_name}'s unique genres:")
-            for g in genre['unique_preferences']['user1_unique']:
-                print(f"- {g}")
-                
-        if genre.get('unique_preferences', {}).get('user2_unique'):
-            print(f"\n{user2_name}'s unique genres:")
-            for g in genre['unique_preferences']['user2_unique']:
-                print(f"- {g}")
-        
-        # Temporal similarity
-        temporal = comparison_results['temporal_similarity']
-        print("\nTemporal Patterns:")
-        print(f"Daily pattern similarity: {temporal.get('daily_similarity', 0):.2f}")
-        print(f"Hourly pattern similarity: {temporal.get('hourly_similarity', 0):.2f}")
-        
-        # Listening habits
-        habits = comparison_results['listening_habits']
-        print("\nListening Habits:")
-        
-        if 'engagement_similarity' in habits:
-            engagement = habits['engagement_similarity']
-            print("Engagement Patterns:")
-            print(f"- Skip rate similarity: {engagement.get('skip_rate', 0):.2f}%")
-            print(f"- Shuffle rate similarity: {engagement.get('shuffle_rate', 0):.2f}%")
-        
-        if 'session_patterns' in habits:
-            sessions = habits['session_patterns']
-            print("Session Patterns:")
-            print(f"- Average session length similarity: {sessions.get('avg_session_similarity', 0):.2f}%")
-            print(f"- Tracks per session similarity: {sessions.get('tracks_per_session_similarity', 0):.2f}%")
-        
         # Save detailed results
         output_dir = Path('comparison_results')
         output_dir.mkdir(exist_ok=True)
@@ -226,6 +247,11 @@ def compare_analyses():
         save_results(comparison_results, output_file)
         print(f"\nDetailed comparison results saved to: {output_file}")
         
+        # Ask if user wants to view results in dashboard
+        view_dashboard = input("\nWould you like to view the comparison in the dashboard? (y/n): ").strip().lower()
+        if view_dashboard == 'y':
+            launch_dashboard_menu()
+        
     except Exception as e:
         logger.error(f"Error during comparison: {str(e)}", exc_info=True)
         print(f"Error during comparison: {str(e)}")
@@ -237,14 +263,18 @@ def main():
     while True:
         try:
             print_menu()
-            choice = input("\nSelect an option (1-5): ").strip()
+            choice = input("\nSelect an option (1-6): ").strip()
             
-            if choice == "5":
+            if choice == "6":
                 print("\nExiting...")
                 break
                 
             if choice == "4":
                 compare_analyses()
+                continue
+                
+            if choice == "5":
+                launch_dashboard_menu()
                 continue
             
             print("\nEnter the directory path containing your Spotify JSON files:")
@@ -297,6 +327,11 @@ def main():
                     print(f"Unique tracks: {stats['unique_tracks']}")
                     print(f"Unique artists: {stats['unique_artists']}")
                     print(f"Total listening time: {stats['total_time_hours']:.2f} hours")
+                
+                # Ask if user wants to view results in dashboard
+                view_dashboard = input("\nWould you like to view the results in the dashboard? (y/n): ").strip().lower()
+                if view_dashboard == 'y':
+                    launch_dashboard_menu()
                 
             except KeyboardInterrupt:
                 print("\nProcessing paused. You can resume later using option 2.")

@@ -1,0 +1,32 @@
+.dropdown-dark .Select-control {
+	background-color: #2A2A2A !important;
+	border-color: #404040 !important;
+	color: white !important;
+}
+
+.dropdown-dark .Select-menu-outer {
+	background-color: #2A2A2A !important;
+	border-color: #404040 !important;
+	color: white !important;
+}
+
+.dropdown-dark .Select-value-label {
+	color: white !important;
+}
+
+.dropdown-dark .Select-menu {
+	background-color: #2A2A2A !important;
+}
+
+.dropdown-dark .Select-option {
+	background-color: #2A2A2A !important;
+	color: white !important;
+}
+
+.dropdown-dark .Select-option:hover {
+	background-color: #404040 !important;
+}
+
+.dropdown-dark .Select-placeholder {
+	color: #CCCCCC !important;
+}

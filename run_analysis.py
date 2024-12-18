@@ -147,27 +147,17 @@ def list_analysis_files(directory: str = "analysis_results") -> List[Path]:
     return files
 
 def launch_dashboard_menu():
-    """Handle the dashboard launch process with file selection"""
-
+    """Launch the dashboard visualization"""
     logger = logging.getLogger(__name__)
-    # First show the file selection menu
-    selected_file = select_file_for_visualization()
-    if not selected_file:
-        print("\nNo file selected. Returning to main menu...")
-        return
-
-    # Then launch the dashboard with the selected file
     try:
         from spotify_profiler.dashboard import SpotifyDashboard
-        print(f"\nLaunching dashboard with file: {selected_file.name}")
+        print("\nLaunching Spotify Analysis Dashboard...")
+        print("\nDashboard will be available at http://localhost:8050")
+        print("Press Ctrl+C to stop the dashboard and return to the main menu.")
+        
+        # Create and run the dashboard - this will block until Ctrl+C
         dashboard = SpotifyDashboard()
-        
-        print("\nDashboard is running at http://localhost:8050")
-        print("Press Ctrl+C to stop the dashboard")
-        print("\nNote: The terminal will be occupied while the dashboard is running.")
-        print("Close the browser window and press Ctrl+C to return to the main menu.")
-        
-        dashboard.run_server(debug=True)
+        dashboard.run_server(debug=True, host='localhost', port=8050, use_reloader=False)
     except KeyboardInterrupt:
         print("\nDashboard stopped. Returning to main menu...")
     except Exception as e:
